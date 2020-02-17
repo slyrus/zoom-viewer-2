@@ -10,27 +10,29 @@
 
 (defmethod handle-repaint ((pane zoom-pane) region)
   (with-sheet-medium (medium pane)
-    (with-bounding-rectangle* (x1 y1 x2 y2) (medium-sheet medium)
-      #+nil
-      (medium-clear-area medium x1 y1 x2 y2)
-      (let ((x-grid-width 2)
-            (y-grid-width 2)
-            (x-grid-color +red+)
-            (y-grid-color +blue+))
-        (let ;; take width away from both x2 and y2 so that we draw inside the
-            ;; bounding rectangle
-            ((grid-x2 (- x2 x-grid-width))
-             (grid-y2 (- y2 y-grid-width)))
-          (let ((x-divisions 20)
-                (y-divisions 20)
-                (medium-width (- grid-x2 x1))
-                (medium-height (- grid-y2 y1)))
-            (loop for i from x1 to grid-x2 by (/ medium-width x-divisions)
-               do
-                 (draw-line* medium i y1 i grid-y2 :line-thickness y-grid-width :ink y-grid-color))
-            (loop for i from y1 to grid-y2 by (/ medium-height y-divisions)
-               do
-                 (draw-line* medium x1 i grid-x2 i :line-thickness x-grid-width :ink x-grid-color))))))))
+    (climi::letf (((medium-clipping-region medium) +everywhere+))
+      (with-bounding-rectangle* (x1 y1 x2 y2) (medium-sheet medium)
+        (medium-clear-area medium x1 y1 x2 y2)
+        (let ((x-grid-width 2)
+              (y-grid-width 2)
+              (x-grid-color +red+)
+              (y-grid-color +blue+))
+          (let ;; take width away from both x2 and y2 so that we draw inside the
+              ;; bounding rectangle
+              ((grid-x2 (- x2 x-grid-width))
+               (grid-y2 (- y2 y-grid-width)))
+            (let ((x-divisions 20)
+                  (y-divisions 20)
+                  (medium-width (- grid-x2 x1))
+                  (medium-height (- grid-y2 y1)))
+              (when (and (> grid-x2 x1)
+                         (> grid-y2 y1))
+                (loop for i from x1 to grid-x2 by (/ medium-width x-divisions)
+                   do
+                     (draw-line* medium i y1 i grid-y2 :line-thickness y-grid-width :ink y-grid-color))
+                (loop for i from y1 to grid-y2 by (/ medium-height y-divisions)
+                   do
+                     (draw-line* medium x1 i grid-x2 i :line-thickness x-grid-width :ink x-grid-color))))))))))
 
 (defun zoom-x-callback (gadget scale)
   (let ((frame (pane-frame gadget)))
@@ -49,9 +51,10 @@
 (defmethod queue-redisplay ((pane zoom-pane))
   (queue-event pane (make-instance 'redisplay-event :sheet pane)))
 
-(defmethod handle-event ((client zoom-pane)
+(defmethod handle-event ((pane zoom-pane)
                          (event  redisplay-event))
-  (redisplay-frame-pane (pane-frame client) client :force-p t))
+  (handle-repaint pane +everywhere+)
+  #+nil(redisplay-frame-pane (pane-frame pane) pane :force-p t))
 
 (define-application-frame zoom-viewer-2-app ()
   ()
@@ -100,9 +103,6 @@
           (medium-clear-area (sheet-medium pane) left top right bottom)))
       (climi::invoke-display-function frame pane))))
 
-(defmethod note-space-requirements-changed (sheet (pane zoom-pane))
-    )
-
 (defclass grid () ())
 
 (define-presentation-method present (grid (type grid) pane view &key)
@@ -121,55 +121,10 @@
              (lambda ()
                (run-frame-top-level frame))))))
 
-#+nil
-(defmethod allocate-space :after ((pane zoom-pane) width height)
-  (execute-frame-command (pane-frame pane) '(resize-window)))
 
-(defmethod note-sheet-region-changed :after ((pane zoom-pane))
-  (queue-redisplay pane)
-  #+nil (redisplay-frame-pane (pane-frame pane) pane)
-  #+nil (setf (pane-needs-redisplay pane) :t)
-  )
-
-;;
-;; This sort of works but doesn't seem right
-#+nil
-(defmethod handle-event :after ((sheet climi::top-level-sheet-pane)
-                                (event window-configuration-event))
-  (let* ((frame (pane-frame sheet))
+(defmethod handle-event :after (top-level-sheet-pane (event window-configuration-event))
+  (let* ((frame (pane-frame top-level-sheet-pane))
          (pane (find-pane-named frame 'app)))
-    #+nil
-    (execute-frame-command (pane-frame pane) '(resize-window))
-    #+nil
-    (redisplay-frame-pane frame pane)
-    #+nil
-    (progn
-      (with-bounding-rectangle* (left top right bottom) pane
-        (when (sheet-viewable-p pane)
-          (medium-clear-area (sheet-medium pane) left top right bottom)))
-      (climi::invoke-display-function frame pane))))
-
-
-#+nil
-(compute-applicable-methods #'allocate-space (list (find-pane-named
-                                                    (find-application-frame 'zoom-viewer-2-app)
-                                                    'app)
-                                                   t t))
-
-
-;; (remove-method #'allocate-space (find-method #'allocate-space '(:around) (list (find-class 'zoom-pane) t t)))
-
-(defun simple-remove-method (method args &optional qualifiers)
-  (remove-method (symbol-function method) (find-method (symbol-function method)
-                                                       qualifiers
-                                                       (mapcar (lambda (x)
-                                                                 (if (equal x t)
-                                                                     t
-                                                                     (find-class x)))
-                                                               args))))
-
-;; (simple-remove-method 'handle-event '(climi::top-level-sheet-pane window-configuration-event))
-
-;; (remove-method #'handle-event (find-method #'handle-event '(:after) (list (find-class 'zoom-pane) t t)))
+    (queue-redisplay pane)))
 
 
