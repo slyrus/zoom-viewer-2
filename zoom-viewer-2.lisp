@@ -10,9 +10,14 @@
 
 (defmethod handle-repaint ((pane zoom-pane) region)
   (with-sheet-medium (medium pane)
-    (climi::letf (((medium-clipping-region medium) +everywhere+))
+    (climi::letf (((medium-clipping-region medium) region))
       (with-bounding-rectangle* (x1 y1 x2 y2) (medium-sheet medium)
         (medium-clear-area medium x1 y1 x2 y2)
+        (draw-rectangle* pane
+                         (* 100 (zoom-x-level pane)) (* 80 (zoom-y-level pane))
+                         (* 150 (zoom-x-level pane)) (* 120 (zoom-y-level pane))
+                         :filled t :ink +orange+)
+        (draw-text* pane "This text moves when you zoom!" (* 100 (zoom-x-level pane)) (* 100 (zoom-y-level pane)))
         (let ((x-grid-width 2)
               (y-grid-width 2)
               (x-grid-color +red+)
@@ -21,8 +26,8 @@
               ;; bounding rectangle
               ((grid-x2 (- x2 x-grid-width))
                (grid-y2 (- y2 y-grid-width)))
-            (let ((x-divisions 20)
-                  (y-divisions 20)
+            (let ((x-divisions (floor (/ 20 (zoom-x-level pane) )))
+                  (y-divisions (floor (/ 20 (zoom-y-level pane) )))
                   (medium-width (- grid-x2 x1))
                   (medium-height (- grid-y2 y1)))
               (when (and (> grid-x2 x1)
@@ -32,7 +37,15 @@
                      (draw-line* medium i y1 i grid-y2 :line-thickness y-grid-width :ink y-grid-color))
                 (loop for i from y1 to grid-y2 by (/ medium-height y-divisions)
                    do
-                     (draw-line* medium x1 i grid-x2 i :line-thickness x-grid-width :ink x-grid-color))))))))))
+                     (draw-line* medium x1 i grid-x2 i :line-thickness x-grid-width :ink x-grid-color))
+                (draw-rectangle* pane
+                                 (* 2 (/ medium-width x-divisions)) (* 2 (/ medium-height y-divisions))
+                                 (* 4 (/ medium-width x-divisions)) (* 4 (/ medium-height y-divisions))
+                                 :filled t :ink +blue+)
+                (draw-text* pane "This text is in box 3, 3!"
+                            (* 3 (/ medium-width x-divisions))
+                            (* 3 (/ medium-height y-divisions)))))))))
+    (call-next-method)))
 
 (defun zoom-x-callback (gadget scale)
   (let ((frame (pane-frame gadget)))
@@ -52,9 +65,8 @@
   (queue-event pane (make-instance 'redisplay-event :sheet pane)))
 
 (defmethod handle-event ((pane zoom-pane)
-                         (event  redisplay-event))
-  (handle-repaint pane +everywhere+)
-  #+nil(redisplay-frame-pane (pane-frame pane) pane :force-p t))
+                         (event redisplay-event))
+  (handle-repaint pane +everywhere+))
 
 (define-application-frame zoom-viewer-2-app ()
   ()
@@ -91,28 +103,17 @@
                 zoom-y)
               int))))
 
-(define-zoom-viewer-2-app-command (resize-window :name t) ()
-  (let* ((frame *application-frame*)
-         (pane (find-pane-named frame 'app)))
-    (setf (pane-needs-redisplay pane) :t)
-    (redisplay-frame-pane frame pane :force-p t )
-    #+nil
-    (progn
-      (with-bounding-rectangle* (left top right bottom) pane
-        (when (sheet-viewable-p pane)
-          (medium-clear-area (sheet-medium pane) left top right bottom)))
-      (climi::invoke-display-function frame pane))))
+(defclass some-text () ())
 
-(defclass grid () ())
+(define-presentation-method present (some-text (type some-text) pane view &key)
+  (draw-rectangle* pane 20 30 300 80 :filled t :ink +green+)
+  (draw-text* pane "This is some nice text, drawn normally!" 20 50))
 
-(define-presentation-method present (grid (type grid) pane view &key)
-  )
-
-(defparameter *grid* (make-instance 'grid))
+(defparameter *some-text* (make-instance 'some-text))
 
 (defun display-zoom-viewer-2 (frame pane)
   (declare (ignore frame pane))
-  (present *grid* (class-of *grid*) :single-box t))
+  (present *some-text* (class-of *some-text*) :single-box t))
 
 (defun zoom-viewer-2-main ()
   (let ((frame (make-application-frame 'zoom-viewer-2-app)))
@@ -121,10 +122,10 @@
              (lambda ()
                (run-frame-top-level frame))))))
 
-
 (defmethod handle-event :after (top-level-sheet-pane (event window-configuration-event))
   (let* ((frame (pane-frame top-level-sheet-pane))
          (pane (find-pane-named frame 'app)))
-    (queue-redisplay pane)))
+    (when pane
+      (queue-redisplay pane))))
 
 
